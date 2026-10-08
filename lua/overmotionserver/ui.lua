@@ -98,7 +98,11 @@ function M.refresh()
     end
   end
   table.insert(lines, '')
-  table.insert(lines, '  [s] start round   [q] close ui')
+  if status.running then
+    table.insert(lines, '  round in progress   [q] close ui')
+  else
+    table.insert(lines, '  [s] start round   [q] close ui')
+  end
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
