@@ -9,3 +9,8 @@ end, { nargs = '?' })
 vim.api.nvim_create_user_command('OverMotionServerStop', function()
   require('overmotionserver.server').stop()
 end, {})
+
+vim.api.nvim_create_user_command('OverMotionServerUI', function()
+  require('overmotionserver.ui').show()
+  require('overmotionserver.ui').refresh()
+end, {})

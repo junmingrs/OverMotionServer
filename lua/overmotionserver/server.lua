@@ -8,7 +8,10 @@ local next_player_id = 1
 local next_prompt_id = 1
 local running = false
 local duration_ms = 300000
+local started_at = nil
+local current_port = 7777
 local timer = nil
+local ui_timer = nil
 
 local function log(msg)
   vim.schedule(function()
@@ -59,17 +62,25 @@ local function stop_round()
     timer:close()
     timer = nil
   end
+  if ui_timer then
+    ui_timer:stop()
+    ui_timer:close()
+    ui_timer = nil
+  end
   running = false
   broadcast({ type = 'end' })
   print_scores()
+  M.refresh()
 end
 
 local function handle_message(player, msg)
   if msg.type == 'join' then
     player.name = msg.name or ('player' .. player.id)
     log('join: ' .. player.name)
+    M.refresh()
     if running then
-      send(player, { type = 'start', duration_ms = duration_ms })
+      local remaining = math.max(0, duration_ms - (uv.now() - started_at))
+      send(player, { type = 'start', duration_ms = remaining })
       send(player, new_prompt(player))
     end
   elseif msg.type == 'solved' and running then
@@ -78,6 +89,7 @@ local function handle_message(player, msg)
       player.score.keystrokes = player.score.keystrokes + (msg.keystrokes or 0)
       player.score.elapsed_ms = player.score.elapsed_ms + (msg.elapsed_ms or 0)
       log(string.format('solved: %s (%d keys, %dms)', player.name, msg.keystrokes or 0, msg.elapsed_ms or 0))
+      M.refresh()
       send(player, new_prompt(player))
     else
       log('stale solved from ' .. player.name .. ' (id ' .. tostring(msg.id) .. ')')
@@ -107,6 +119,7 @@ local function on_client(client)
       players[player.id] = nil
       client:close()
       log('disconnected: ' .. player.name)
+      vim.schedule(M.refresh)
       return
     end
     player.buffer = player.buffer .. chunk
@@ -125,6 +138,18 @@ local function on_client(client)
       end
     end
   end)
+end
+
+function M.players()
+  return players
+end
+
+function M.status()
+  local remaining = nil
+  if running and started_at then
+    remaining = math.max(0, duration_ms - (uv.now() - started_at))
+  end
+  return { running = running, remaining_ms = remaining, port = current_port }
 end
 
 function M.listen(port)
@@ -151,7 +176,14 @@ function M.listen(port)
     server = nil
     return
   end
+  current_port = port
   log('listening on 0.0.0.0:' .. port)
+  require('overmotionserver.ui').show()
+  M.refresh()
+end
+
+function M.refresh()
+  require('overmotionserver.ui').refresh()
 end
 
 function M.start(seconds)
@@ -161,6 +193,7 @@ function M.start(seconds)
   end
   seconds = seconds or math.floor(duration_ms / 1000)
   duration_ms = seconds * 1000
+  started_at = uv.now()
   running = true
   broadcast({ type = 'start', duration_ms = duration_ms })
   for _, p in pairs(players) do
@@ -171,7 +204,12 @@ function M.start(seconds)
   timer:start(duration_ms, 0, function()
     vim.schedule(stop_round)
   end)
+  ui_timer = uv.new_timer()
+  ui_timer:start(1000, 1000, function()
+    vim.schedule(M.refresh)
+  end)
   log('round started: ' .. seconds .. 's')
+  M.refresh()
 end
 
 function M.stop()
