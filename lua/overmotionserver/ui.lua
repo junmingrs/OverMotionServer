@@ -35,7 +35,22 @@ function M.show()
     end
   end, { buffer = buf, nowait = true })
   vim.keymap.set('n', 's', function()
-    require('overmotionserver.server').start(300)
+    if not buf or not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    local seconds = nil
+    for _, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+      local n = l:match('duration:%s*(%d+)')
+      if n then
+        seconds = tonumber(n)
+        break
+      end
+    end
+    if not seconds or seconds <= 0 then
+      vim.notify('[OverMotionServer] invalid duration, using 300s', vim.log.levels.WARN)
+      seconds = 300
+    end
+    require('overmotionserver.server').start(seconds)
   end, { buffer = buf, nowait = true })
 end
 
@@ -45,6 +60,17 @@ function M.refresh()
   end
   local server = require('overmotionserver.server')
   local status = server.status()
+
+  -- preserve the user's editable duration line across refreshes
+  local current = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local duration_line = '  duration: 300s'
+  for _, l in ipairs(current) do
+    if l:match('duration:') then
+      duration_line = l
+      break
+    end
+  end
+
   local lines = {
     '  OVERMOTION SERVER — port ' .. status.port,
     '',
@@ -54,6 +80,7 @@ function M.refresh()
   else
     table.insert(lines, '  status: idle')
   end
+  table.insert(lines, duration_line)
   table.insert(lines, '')
 
   local sorted = {}
@@ -71,11 +98,11 @@ function M.refresh()
     end
   end
   table.insert(lines, '')
-  table.insert(lines, '  [s] start round (300s)   [q] close ui')
+  table.insert(lines, '  [s] start round   [q] close ui')
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
+  vim.bo[buf].modifiable = true
 end
 
 return M
