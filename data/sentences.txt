@@ -1,0 +1,205 @@
+the quick brown fox jumps over the lazy dog.
+vim is a highly configurable text editor built to enable efficient text editing.
+hello world, this is a simple sentence to practice typing.
+lua is a powerful, efficient, lightweight, embeddable scripting language.
+practice makes perfect, especially when it comes to vim motions.
+the five boxing wizards jump quickly.
+a journey of a thousand miles begins with a single step.
+keyboard shortcuts can save a lot of time when editing code.
+consistency is the key to mastering any new skill.
+every expert was once a beginner.
+the mitochondria is the powerhouse of the cell.
+actions speak louder than words.
+better late than never, but never late is better.
+fortune favors the bold.
+practice your motions every single day.
+the early bird catches the worm.
+knowledge is power.
+time flies when you are having fun.
+where there is a will, there is a way.
+actions have consequences, so choose them wisely.
+computer science is no more about computers than astronomy is about telescopes.
+simplicity is the ultimate sophistication.
+first, solve the problem. then, write the code.
+talk is cheap, show me the code.
+stay hungry, stay foolish.
+the only way to do great work is to love what you do.
+life is what happens when you are busy making other plans.
+hello from the other side.
+i would like to buy a hamburger and some fries.
+the weather is nice today, perfect for a walk.
+she sells seashells by the seashore.
+how much wood would a woodchuck chuck if a woodchuck could chuck wood.
+a rolling stone gathers no moss.
+don't count your chickens before they hatch.
+every cloud has a silver lining.
+it takes two to tango.
+the pen is mightier than the sword.
+when in rome, do as the romans do.
+two heads are better than one.
+you can't judge a book by its cover.
+make hay while the sun shines.
+birds of a feather flock together.
+a picture is worth a thousand words.
+honesty is the best policy.
+kill two birds with one stone.
+let the cat out of the bag.
+piece of cake.
+under the weather.
+back to the drawing board.
+blessing in disguise.
+break a leg.
+cut to the chase.
+every now and then.
+get your act together.
+hit the nail on the head.
+it's not rocket science.
+jump on the bandwagon.
+know the ropes.
+leave no stone unturned.
+make a long story short.
+needless to say.
+on the same page.
+practise what you preach.
+quick on the uptake.
+run the show.
+see eye to eye.
+take it with a grain of salt.
+the best of both worlds.
+up in the air.
+verge on impossible.
+wrap your head around it.
+x marks the spot.
+you can say that again.
+zero tolerance.
+a blessing in disguise.
+back to square one.
+beat around the bush.
+call it a day.
+daredevil.
+easy come, easy go.
+face the music.
+give it a shot.
+hit the books.
+i am over the moon.
+jump for joy.
+keep an eye on it.
+look before you leap.
+miss the boat.
+no pain, no gain.
+off the beaten track.
+pass the buck.
+quick as a flash.
+run like the wind.
+a stitch in time saves nine.
+better to be safe than sorry.
+cross your fingers.
+do not bite off more than you can chew.
+every little helps.
+fortune comes to those who wait.
+great minds think alike.
+haste makes waste.
+i see what you did there.
+keep your chin up.
+less is more.
+many hands make light work.
+no news is good news.
+once in a blue moon.
+pride comes before a fall.
+quiet as a mouse.
+read between the lines.
+slow and steady wins the race.
+the calm before the storm.
+up in arms.
+variety is the spice of life.
+walk the talk.
+x-factor.
+you are what you eat.
+zoom in on the details.
+always look on the bright side of life.
+be the change you wish to see in the world.
+compare apples to apples.
+do not put all your eggs in one basket.
+efficient typing saves hours over a lifetime.
+escape the matrix of bad habits.
+expedition.
+unzip the archive to find the files.
+grep the source for the pattern you need.
+pipe the output to another command.
+redirect the stream to a file.
+use a macro to repeat the sequence.
+record, replay, and refine.
+motions first, then operators.
+delete with intent, yank with care.
+visual mode selection is powerful.
+search and substitute across the whole file.
+undo is your best friend today.
+a dot repeats the last change.
+count, motion, operator: the grammar of vim.
+maps turn long sequences into instinct.
+marks take you back in a flash.
+windows split the screen into panes of focus.
+tabs keep contexts apart.
+buffers hold the unsaved future.
+the command line is a feature, not a bug.
+normal mode is your home base.
+insert mode is where the words begin.
+visual lines show structure at a glance.
+fold the noise, keep the signal.
+macros are the ultimate power tool.
+registers store more than one treasure.
+the vimtutor is a fine teacher.
+helptags lead you to answers.
+plugins extend the core with care.
+lazy loading keeps startup snappy.
+config in lua is expressive and fast.
+headless mode for automation and scripts.
+the remote plugin host keeps things tidy.
+health checks reveal what lurks below.
+diagnostics point where the pain lives.
+quickfix lists gather the scattered news.
+the location list keeps a second opinion.
+refactor often, commit often, sleep well.
+write small functions with one job each.
+name things clearly so code reads like prose.
+tests guard the door while you sleep.
+break the problem into smaller problems.
+measure twice, cut once.
+ship the simplest thing that works.
+delete code with the same love you wrote it.
+comments explain why, not what.
+version control is a time machine.
+branches let ideas grow apart.
+merge with intent and review with kindness.
+pull requests are conversations about code.
+review the diff before the push.
+keep the main branch always green.
+an error message can teach a lot.
+stack traces are breadcrumbs home.
+logging beats guessing every time.
+a failing test is a gift.
+fix the root cause, not the symptom.
+cahe with care and invalidate wisely.
+performance is a feature worth measuring.
+readability beats cleverness on a monday.
+naming things is hard, but worth it.
+the user is not like you, and that is fine.
+accessibility makes software for everyone.
+privacy by default, not by checkbox.
+open source thrives on trust and review.
+document the decision, not just the code.
+onboarding should feel like a welcome mat.
+a good error message saves an afternoon.
+keyboard over mouse, hands on home row.
+j and k are your daily bread.
+h and l keep you in line.
+w and e hop across words.
+b and e find word edges.
+f and t jump to characters.
+g pairs unlock deeper moves.
+z zz keeps the cursor centered.
+percent jumps between matching pairs.
+star and hash find the word under your cursor.
+slash shows the way forward.
+colon opens the command palette.
+esc returns you to command mode.
