@@ -71,9 +71,10 @@ function M.refresh()
     end
   end
 
+  local shown_ip = status.host and status.host ~= '0.0.0.0' and status.host or status.ip
   local lines = {
     '  OVERMOTION SERVER — port ' .. status.port,
-    '  ip: ' .. (status.ip or '127.0.0.1'),
+    '  ip: ' .. (shown_ip or '127.0.0.1'),
     '',
   }
   if status.running and status.remaining_ms then

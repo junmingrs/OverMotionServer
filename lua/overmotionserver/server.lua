@@ -10,6 +10,7 @@ local running = false
 local duration_ms = 300000
 local started_at = nil
 local current_port = 7777
+local current_host = '0.0.0.0'
 local timer = nil
 local ui_timer = nil
 
@@ -131,6 +132,7 @@ local function handle_message(player, msg)
   if msg.type == 'join' then
     player.name = msg.name or ('player' .. player.id)
     log('join: ' .. player.name)
+    send(player, { type = 'joined', name = player.name })
     M.refresh()
     if running then
       local remaining = math.max(0, duration_ms - (uv.now() - started_at))
@@ -368,35 +370,50 @@ function M.status()
   if running and started_at then
     remaining = math.max(0, duration_ms - (uv.now() - started_at))
   end
-  return { running = running, remaining_ms = remaining, port = current_port, ip = M.local_ip() }
+  return {
+    running = running,
+    remaining_ms = remaining,
+    port = current_port,
+    host = current_host,
+    ip = M.local_ip(),
+  }
 end
 
-function M.listen(port)
+function M.listen(port, host)
   port = port or 7777
+  host = host or '0.0.0.0'
   if server then
-    log('already listening')
+    log('already listening on ' .. current_host .. ':' .. current_port)
     return
   end
   server = uv.new_tcp()
   local ok, err = pcall(function()
-    server:bind('0.0.0.0', port)
-    server:listen(128, function(listen_err)
-      if listen_err then
-        log('listen error: ' .. tostring(listen_err))
+    local bound, bind_err = server:bind(host, port)
+    if not bound then
+      error(bind_err or 'bind failed', 0)
+    end
+    local listening, listen_err = server:listen(128, function(accept_err)
+      if accept_err then
+        log('listen error: ' .. tostring(accept_err))
         return
       end
       local client = uv.new_tcp()
       server:accept(client)
       on_client(client)
     end)
+    if not listening then
+      error(listen_err or 'listen failed', 0)
+    end
   end)
   if not ok then
-    log('bind failed: ' .. tostring(err))
+    log('bind failed on ' .. host .. ':' .. port .. ': ' .. tostring(err))
+    server:close()
     server = nil
     return
   end
   current_port = port
-  log('listening on 0.0.0.0:' .. port)
+  current_host = host
+  log('listening on ' .. host .. ':' .. port)
   require('overmotionserver.ui').show()
   M.refresh()
 end
