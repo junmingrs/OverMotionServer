@@ -13,6 +13,60 @@ local current_port = 7777
 local timer = nil
 local ui_timer = nil
 
+local VIRTUAL_IFACE = {
+  '^docker', '^br%-', '^veth', '^virbr', '^vmnet', '^vboxnet', '^tun', '^tap', '^wg', '^zt',
+}
+
+local function is_virtual_iface(name)
+  for _, pat in ipairs(VIRTUAL_IFACE) do
+    if name:match(pat) then
+      return true
+    end
+  end
+  return false
+end
+
+-- Higher rank wins. Prefer real LAN ranges over tunnels/containers.
+local function ip_rank(ip, iface)
+  if is_virtual_iface(iface) then
+    return 0
+  end
+  if ip:match('^192%.168%.') then
+    return 40
+  end
+  if ip:match('^10%.') then
+    return 30
+  end
+  local second = tonumber(ip:match('^172%.(%d+)%.'))
+  if second and second >= 16 and second <= 31 then
+    return 20
+  end
+  if ip:match('^100%.') then
+    return 10 -- CGNAT / Tailscale
+  end
+  return 5
+end
+
+-- Best-guess IPv4 address participants should connect to. nil when offline.
+function M.local_ip()
+  local ok, ifaces = pcall(uv.interface_addresses)
+  if not ok or type(ifaces) ~= 'table' then
+    return nil
+  end
+  local best, best_rank = nil, -1
+  for name, addrs in pairs(ifaces) do
+    for _, a in ipairs(addrs) do
+      if a.family == 'inet' and not a.internal and a.ip then
+        local rank = ip_rank(a.ip, name)
+        if rank > best_rank then
+          best, best_rank = a.ip, rank
+        end
+      end
+    end
+  end
+  return best
+end
+
 local function log(msg)
   vim.schedule(function()
     vim.notify('[OverMotionServer] ' .. msg)
@@ -97,12 +151,174 @@ local function handle_message(player, msg)
   end
 end
 
+local MAX_BUFFER = 64 * 1024
+
+local function escape_bytes(s, max)
+  s = s:sub(1, max)
+  return (s:gsub('[^\32-\126]', function(c)
+    return string.format('\\x%02x', c:byte())
+  end))
+end
+
+local function utf16_to_utf8(s, be)
+  local out = {}
+  local i = 1
+  local n = #s - (#s % 2)
+  while i < n do
+    local b1, b2 = s:byte(i), s:byte(i + 1)
+    local unit = be and (b1 * 256 + b2) or (b2 * 256 + b1)
+    i = i + 2
+    local cp = unit
+    if unit >= 0xD800 and unit <= 0xDBFF and i < n then
+      local c1, c2 = s:byte(i), s:byte(i + 1)
+      local low = be and (c1 * 256 + c2) or (c2 * 256 + c1)
+      if low >= 0xDC00 and low <= 0xDFFF then
+        cp = 0x10000 + (unit - 0xD800) * 0x400 + (low - 0xDC00)
+        i = i + 2
+      end
+    end
+    if cp < 0x80 then
+      out[#out + 1] = string.char(cp)
+    elseif cp < 0x800 then
+      out[#out + 1] = string.char(0xC0 + math.floor(cp / 0x40), 0x80 + cp % 0x40)
+    elseif cp < 0x10000 then
+      out[#out + 1] = string.char(
+        0xE0 + math.floor(cp / 0x1000),
+        0x80 + math.floor(cp / 0x40) % 0x40,
+        0x80 + cp % 0x40
+      )
+    else
+      out[#out + 1] = string.char(
+        0xF0 + math.floor(cp / 0x40000),
+        0x80 + math.floor(cp / 0x1000) % 0x40,
+        0x80 + math.floor(cp / 0x40) % 0x40,
+        0x80 + cp % 0x40
+      )
+    end
+  end
+  return table.concat(out)
+end
+
+-- Number of bytes that can be decoded now. Holds back a dangling odd byte or
+-- high surrogate so the next chunk can complete it.
+local function utf16_ready(s, be)
+  local n = #s - (#s % 2)
+  if n >= 2 then
+    local b1, b2 = s:byte(n - 1), s:byte(n)
+    local unit = be and (b1 * 256 + b2) or (b2 * 256 + b1)
+    if unit >= 0xD800 and unit <= 0xDBFF then
+      n = n - 2
+    end
+  end
+  return n
+end
+
+local function detect_encoding(player, bytes)
+  if bytes:sub(1, 3) == '\239\187\191' then
+    player.encoding = 'utf-8'
+    return bytes:sub(4)
+  end
+  if bytes:sub(1, 2) == '\255\254' then
+    player.encoding = 'utf-16le'
+    return bytes:sub(3)
+  end
+  if bytes:sub(1, 2) == '\254\255' then
+    player.encoding = 'utf-16be'
+    return bytes:sub(3)
+  end
+  local sample = bytes:sub(1, 256)
+  local _, nuls = sample:gsub('%z', '')
+  if #sample >= 4 and nuls > #sample * 0.3 then
+    player.encoding = sample:byte(1) == 0 and 'utf-16be' or 'utf-16le'
+    return bytes
+  end
+  player.encoding = 'utf-8'
+  return bytes
+end
+
+local function dispatch(player, line)
+  line = line:gsub('^\239\187\191', '')
+  line = vim.trim(line)
+  if line == '' then
+    return
+  end
+  local ok, msg = pcall(vim.json.decode, line)
+  if not ok or type(msg) ~= 'table' or not msg.type then
+    player.bad = (player.bad or 0) + 1
+    if player.bad <= 3 then
+      log(('bad message from %s: %s'):format(player.name, escape_bytes(line, 120)))
+    end
+    return
+  end
+  vim.schedule(function()
+    if players[player.id] == player then
+      handle_message(player, msg)
+    end
+  end)
+end
+
+local function feed_text(player, text)
+  player.buffer = player.buffer .. text
+  while true do
+    local s, e, sep = player.buffer:find('([\r\n])')
+    if not s then
+      break
+    end
+    if sep == '\r' and e == #player.buffer then
+      break -- might be a CRLF split across reads
+    end
+    local line = player.buffer:sub(1, s - 1)
+    local nxt = e + 1
+    if sep == '\r' and player.buffer:sub(nxt, nxt) == '\n' then
+      nxt = nxt + 1
+    end
+    player.buffer = player.buffer:sub(nxt)
+    dispatch(player, line)
+  end
+
+  if #player.buffer > MAX_BUFFER then
+    log('buffer overflow from ' .. player.name .. ', dropping connection')
+    players[player.id] = nil
+    player.buffer = ''
+    if player.handle and not player.handle:is_closing() then
+      player.handle:close()
+    end
+    vim.schedule(M.refresh)
+    return
+  end
+
+  -- For clients that never send a delimiter: accept a complete JSON object.
+  local rest = vim.trim(player.buffer)
+  if rest ~= '' and rest:sub(1, 1) == '{' then
+    local ok, msg = pcall(vim.json.decode, rest)
+    if ok and type(msg) == 'table' and msg.type then
+      player.buffer = ''
+      dispatch(player, rest)
+    end
+  end
+end
+
+local function feed_raw(player, chunk)
+  player.raw = player.raw .. chunk
+  local be = player.encoding == 'utf-16be'
+  local ready = utf16_ready(player.raw, be)
+  if ready <= 0 then
+    return
+  end
+  local text = utf16_to_utf8(player.raw:sub(1, ready), be)
+  player.raw = player.raw:sub(ready + 1)
+  feed_text(player, text)
+end
+
 local function on_client(client)
   local player = {
     id = next_player_id,
     name = 'player' .. next_player_id,
     handle = client,
     buffer = '',
+    raw = '',
+    encoding = nil,
+    bad = 0,
     score = { solved = 0, keystrokes = 0, elapsed_ms = 0 },
     current_id = nil,
   }
@@ -122,20 +338,23 @@ local function on_client(client)
       vim.schedule(M.refresh)
       return
     end
-    player.buffer = player.buffer .. chunk
-    while true do
-      local nl = player.buffer:find('\n', 1, true)
-      if not nl then
-        break
+    if chunk == '' then
+      return
+    end
+    if player.encoding == nil then
+      player.raw = player.raw .. chunk
+      local first = player.raw:byte(1)
+      local maybe_bom = first == 0xEF or first == 0xFF or first == 0xFE
+      if maybe_bom and #player.raw < 3 then
+        return -- wait for the rest of a possible BOM
       end
-      local line = player.buffer:sub(1, nl - 1)
-      player.buffer = player.buffer:sub(nl + 1)
-      local ok, msg = pcall(vim.json.decode, line)
-      if ok and type(msg) == 'table' and msg.type then
-        vim.schedule(function()
-          handle_message(player, msg)
-        end)
-      end
+      chunk = detect_encoding(player, player.raw)
+      player.raw = ''
+    end
+    if player.encoding == 'utf-8' then
+      feed_text(player, chunk)
+    else
+      feed_raw(player, chunk)
     end
   end)
 end
@@ -149,7 +368,7 @@ function M.status()
   if running and started_at then
     remaining = math.max(0, duration_ms - (uv.now() - started_at))
   end
-  return { running = running, remaining_ms = remaining, port = current_port }
+  return { running = running, remaining_ms = remaining, port = current_port, ip = M.local_ip() }
 end
 
 function M.listen(port)

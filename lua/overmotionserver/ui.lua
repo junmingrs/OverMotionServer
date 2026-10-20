@@ -12,7 +12,7 @@ function M.show()
   vim.bo[buf].bufhidden = 'wipe'
   vim.bo[buf].swapfile = false
   local width = 52
-  local height = 16
+  local height = 18
   local ok, w = pcall(vim.api.nvim_open_win, buf, true, {
     relative = 'editor',
     row = math.floor((vim.o.lines - height) / 2),
@@ -73,6 +73,7 @@ function M.refresh()
 
   local lines = {
     '  OVERMOTION SERVER — port ' .. status.port,
+    '  ip: ' .. (status.ip or '127.0.0.1'),
     '',
   }
   if status.running and status.remaining_ms then
