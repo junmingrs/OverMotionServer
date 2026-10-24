@@ -386,6 +386,9 @@ if ROUNDS > 0 then
       end
     end
   end
+  if CLEAN_CLOSE == 0 and LATE == 0 and stats.ended < N * ROUNDS then
+    failures = failures + 1
+  end
 end
 if LATE > 0 and stats.late_joined < LATE then
   failures = failures + 1
