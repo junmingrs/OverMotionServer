@@ -2,10 +2,12 @@
 --
 -- Usage:
 --   HOST=16.176.140.127 PORT=7777 N=20 nvim -l scripts/loadtest.lua
+--   ROUNDS=2 HOLD=120 ... (keep clients connected for two rounds)
 --
 -- Optional env:
 --   SOLVE=1          simulate solving prompts (sends "solved" every 1-3s)
---   HOLD=45          seconds to keep clients connected (time to start the round)
+--   HOLD=45          seconds to keep clients connected (time for all rounds)
+--   ROUNDS=1         number of rounds to keep the clients connected for (0 = join-only)
 --   JOIN_TIMEOUT=10  seconds to wait for all initial joins
 --   SOLVE_MIN=1      minimum solve delay in seconds
 --   SOLVE_MAX=3      maximum solve delay in seconds
@@ -31,6 +33,7 @@ local PORT = tonumber(env('PORT', '7777'))
 local N = tonumber(env('N', '20'))
 local SOLVE = env('SOLVE', '0') == '1'
 local HOLD_MS = tonumber(env('HOLD', '45')) * 1000
+local ROUNDS = tonumber(env('ROUNDS', '1'))
 local JOIN_TIMEOUT_MS = tonumber(env('JOIN_TIMEOUT', '10')) * 1000
 local SOLVE_MIN_MS = tonumber(env('SOLVE_MIN', '1')) * 1000
 local SOLVE_MAX_MS = tonumber(env('SOLVE_MAX', '3')) * 1000
@@ -41,6 +44,7 @@ local LATE_AFTER_MS = tonumber(env('LATE_AFTER', '3')) * 1000
 
 assert(PORT and PORT > 0 and PORT <= 65535, 'invalid PORT')
 assert(N and N > 0, 'invalid N')
+assert(ROUNDS and ROUNDS >= 0, 'invalid ROUNDS')
 if SOLVE_MAX_MS < SOLVE_MIN_MS then
   SOLVE_MAX_MS = SOLVE_MIN_MS
 end
@@ -66,8 +70,13 @@ local stats = {
 }
 local join_latencies = {}
 local clients = {}
-local round_started = false
-local round_over = false
+local rounds_started = 0
+local rounds_ended = 0
+local round_active = false
+local all_rounds_done = ROUNDS == 0
+local round_prompt_base = 0
+local round_solve_base = 0
+local round_stats = {}
 local burst_done = false
 local extras_scheduled = false
 local add_client
@@ -184,11 +193,19 @@ local function handle_line(c, line)
     end
   elseif msg.type == 'start' then
     c.started = true
-    if not round_started then
-      round_started = true
-      log('ROUND STARTED (%ds)', math.floor((msg.duration_ms or 0) / 1000))
+    if not round_active then
+      round_active = true
+      rounds_started = rounds_started + 1
+      round_prompt_base = stats.prompts
+      round_solve_base = stats.solves
+      for _, other in pairs(clients) do
+        other.ended = false
+        other.prompt_id = nil
+        other.first_prompt = false
+      end
+      log('ROUND %d STARTED (%ds)', rounds_started, math.floor((msg.duration_ms or 0) / 1000))
+      schedule_extras()
     end
-    schedule_extras()
   elseif msg.type == 'prompt' then
     c.prompts = c.prompts + 1
     c.prompt_id = msg.id
@@ -203,9 +220,18 @@ local function handle_line(c, line)
   elseif msg.type == 'end' then
     c.ended = true
     stats.ended = stats.ended + 1
-    if not round_over then
-      round_over = true
-      log('ROUND OVER')
+    if round_active then
+      round_active = false
+      rounds_ended = rounds_ended + 1
+      local prompts = stats.prompts - round_prompt_base
+      local solves = stats.solves - round_solve_base
+      round_stats[rounds_ended] = { prompts = prompts, solves = solves }
+      log('ROUND %d OVER (%d prompts, %d solves)', rounds_ended, prompts, solves)
+      if rounds_ended >= ROUNDS then
+        all_rounds_done = true
+      else
+        log('waiting for round %d — start it on the server', rounds_ended + 1)
+      end
     end
   end
 end
@@ -278,12 +304,14 @@ if not burst_ok then
 end
 
 if HOLD_MS > 0 then
-  log('holding up to %ds — start the round on the server', math.floor(HOLD_MS / 1000))
+  if ROUNDS > 0 then
+    log('holding up to %ds — start round 1 on the server', math.floor(HOLD_MS / 1000))
+  end
   vim.wait(HOLD_MS, function()
-    return round_over
+    return all_rounds_done
   end, 50)
-  if not round_over then
-    log('HOLD expired without a round end')
+  if not all_rounds_done then
+    log('HOLD expired after %d/%d rounds', rounds_ended, ROUNDS)
   else
     vim.wait(500)
   end
@@ -320,6 +348,13 @@ print('=== SUMMARY ===')
 print(string.format('target           : %s:%d', HOST, PORT))
 print(string.format('initial joins    : %d/%d', stats.joined, N))
 print(string.format('join latency     : avg %.1fms  p50 %.1fms  p95 %.1fms  max %.1fms', avg, percentile(0.5), percentile(0.95), percentile(1)))
+if ROUNDS > 0 then
+  print(string.format('rounds           : %d started, %d/%d ended', rounds_started, rounds_ended, ROUNDS))
+  for i = 1, ROUNDS do
+    local round = round_stats[i] or {}
+    print(string.format('  round %d        : %d prompts, %d solves', i, round.prompts or 0, round.solves or 0))
+  end
+end
 if LATE > 0 then
   print(string.format('late joins       : %d/%d', stats.late_joined, LATE))
 end
@@ -336,11 +371,21 @@ end
 if stats.errors > 0 then
   failures = failures + 1
 end
-if SOLVE and stats.prompts == 0 then
-  failures = failures + 1
-end
-if SOLVE and stats.solves == 0 then
-  failures = failures + 1
+if ROUNDS > 0 then
+  if rounds_started < ROUNDS then
+    failures = failures + 1
+  end
+  if rounds_ended < ROUNDS then
+    failures = failures + 1
+  end
+  if SOLVE then
+    for i = 1, ROUNDS do
+      local round = round_stats[i]
+      if not round or round.prompts == 0 or round.solves == 0 then
+        failures = failures + 1
+      end
+    end
+  end
 end
 if LATE > 0 and stats.late_joined < LATE then
   failures = failures + 1
