@@ -330,7 +330,12 @@ local function on_client(client)
 
   client:read_start(function(err, chunk)
     if err then
-      log('read error: ' .. tostring(err))
+      players[player.id] = nil
+      if not client:is_closing() then
+        client:close()
+      end
+      log('read error from ' .. player.name .. ': ' .. tostring(err))
+      vim.schedule(M.refresh)
       return
     end
     if not chunk then
