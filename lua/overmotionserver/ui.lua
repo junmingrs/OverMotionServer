@@ -11,7 +11,7 @@ function M.show()
   vim.bo[buf].buftype = 'nofile'
   vim.bo[buf].bufhidden = 'wipe'
   vim.bo[buf].swapfile = false
-  local width = 52
+  local width = 62
   local height = 17
   local ok, w = pcall(vim.api.nvim_open_win, buf, true, {
     relative = 'editor',
@@ -85,18 +85,25 @@ function M.refresh()
   table.insert(lines, duration_line)
   table.insert(lines, '')
 
-  local sorted = {}
-  for _, p in pairs(server.players()) do
-    table.insert(sorted, p)
-  end
-  table.sort(sorted, function(a, b)
-    return a.score.solved > b.score.solved
-  end)
+  local sorted = server.scores()
   if #sorted == 0 then
     table.insert(lines, '  waiting for players...')
   else
-    for i, p in ipairs(sorted) do
-      table.insert(lines, string.format('  %d. %-12s %2d solved  %4d keys  %5dms', i, p.name, p.score.solved, p.score.keystrokes, p.score.elapsed_ms))
+    table.insert(lines, string.format('  %-3s %-12s %6s %6s %5s %6s', '#', 'player', 'points', 'solved', 'keys', 'avg'))
+    for i, entry in ipairs(sorted) do
+      local name = entry.name or ''
+      if #name > 12 then
+        name = name:sub(1, 9) .. '...'
+      end
+      table.insert(lines, string.format(
+        '  %2d. %-12s %6d %6d %5d %5.2fs',
+        i,
+        name,
+        entry.points,
+        entry.solved,
+        entry.keystrokes,
+        entry.avg_seconds
+      ))
     end
   end
   table.insert(lines, '')

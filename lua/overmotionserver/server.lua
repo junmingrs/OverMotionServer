@@ -1,6 +1,7 @@
 local M = {}
 
 local uv = vim.uv
+local scoring = require('overmotionserver.scoring')
 
 local server = nil
 local players = {}
@@ -96,22 +97,52 @@ local function new_prompt(player)
   return { type = 'prompt', id = player.current_id, target = target, broken = broken }
 end
 
-local function print_scores()
-  local lines = { 'Final scores:' }
-  local sorted = {}
+local function current_scores()
+  local entries = {}
   for _, p in pairs(players) do
-    table.insert(sorted, p)
+    table.insert(entries, {
+      id = p.id,
+      name = p.name,
+      points = p.score.points or 0,
+      solved = p.score.solved or 0,
+      keystrokes = p.score.keystrokes or 0,
+      avg_seconds = scoring.average_seconds(p.score.solved or 0, p.score.elapsed_ms or 0),
+    })
   end
-  table.sort(sorted, function(a, b)
-    return a.score.solved > b.score.solved
-  end)
-  for i, p in ipairs(sorted) do
-    table.insert(lines, string.format('%d. %s — %d solved, %d keys, %dms', i, p.name, p.score.solved, p.score.keystrokes, p.score.elapsed_ms))
+  return scoring.sort_scores(entries)
+end
+
+local function public_score(entry)
+  return {
+    name = entry.name,
+    points = entry.points,
+    solved = entry.solved,
+    keystrokes = entry.keystrokes,
+    avg_seconds = entry.avg_seconds,
+  }
+end
+
+local function print_scores(scores)
+  scores = scores or current_scores()
+  local lines = { 'Final scores:' }
+  for i, entry in ipairs(scores) do
+    table.insert(lines, string.format(
+      '%d. %s — %d pts, %d solved, %d keys, %.2fs avg',
+      i,
+      entry.name,
+      entry.points,
+      entry.solved,
+      entry.keystrokes,
+      entry.avg_seconds
+    ))
   end
   log(table.concat(lines, '\n'))
 end
 
 local function stop_round()
+  if not running then
+    return
+  end
   if timer then
     timer:stop()
     timer:close()
@@ -123,8 +154,24 @@ local function stop_round()
     ui_timer = nil
   end
   running = false
-  broadcast({ type = 'end' })
-  print_scores()
+
+  local scores = current_scores()
+  local top = {}
+  for i = 1, math.min(3, #scores) do
+    top[i] = public_score(scores[i])
+  end
+  local by_id = {}
+  for _, entry in ipairs(scores) do
+    by_id[entry.id] = public_score(entry)
+  end
+  for _, p in pairs(players) do
+    local you = by_id[p.id]
+    if you then
+      send(p, { type = 'end', scores = top, you = you })
+    end
+  end
+
+  print_scores(scores)
   M.refresh()
 end
 
@@ -141,10 +188,12 @@ local function handle_message(player, msg)
     end
   elseif msg.type == 'solved' and running then
     if msg.id == player.current_id then
+      local points = scoring.sentence_points(msg.keystrokes, msg.elapsed_ms)
       player.score.solved = player.score.solved + 1
       player.score.keystrokes = player.score.keystrokes + (msg.keystrokes or 0)
       player.score.elapsed_ms = player.score.elapsed_ms + (msg.elapsed_ms or 0)
-      log(string.format('solved: %s (%d keys, %dms)', player.name, msg.keystrokes or 0, msg.elapsed_ms or 0))
+      player.score.points = (player.score.points or 0) + points
+      log(string.format('solved: %s (%d keys, %dms, +%d pts)', player.name, msg.keystrokes or 0, msg.elapsed_ms or 0, points))
       M.refresh()
       send(player, new_prompt(player))
     else
@@ -321,7 +370,7 @@ local function on_client(client)
     raw = '',
     encoding = nil,
     bad = 0,
-    score = { solved = 0, keystrokes = 0, elapsed_ms = 0 },
+    score = { solved = 0, keystrokes = 0, elapsed_ms = 0, points = 0 },
     current_id = nil,
   }
   next_player_id = next_player_id + 1
@@ -368,6 +417,10 @@ end
 
 function M.players()
   return players
+end
+
+function M.scores()
+  return current_scores()
 end
 
 function M.status()
@@ -436,9 +489,11 @@ function M.start(seconds)
   duration_ms = seconds * 1000
   started_at = uv.now()
   running = true
+  for _, p in pairs(players) do
+    p.score = { solved = 0, keystrokes = 0, elapsed_ms = 0, points = 0 }
+  end
   broadcast({ type = 'start', duration_ms = duration_ms })
   for _, p in pairs(players) do
-    p.score = { solved = 0, keystrokes = 0, elapsed_ms = 0 }
     send(p, new_prompt(p))
   end
   timer = uv.new_timer()

@@ -66,6 +66,7 @@ local stats = {
   prompts = 0,
   solves = 0,
   ended = 0,
+  score_payloads = 0,
   errors = 0,
 }
 local join_latencies = {}
@@ -220,6 +221,40 @@ local function handle_line(c, line)
   elseif msg.type == 'end' then
     c.ended = true
     stats.ended = stats.ended + 1
+    local score_ok = type(msg.scores) == 'table'
+      and type(msg.you) == 'table'
+      and type(msg.you.points) == 'number'
+      and type(msg.you.avg_seconds) == 'number'
+    if score_ok then
+      if #msg.scores > 3 then
+        score_ok = false
+      end
+      if msg.you.points % 1 ~= 0 then
+        score_ok = false
+      end
+      for _, entry in ipairs(msg.scores) do
+        if type(entry.points) ~= 'number'
+          or entry.points % 1 ~= 0
+          or type(entry.name) ~= 'string'
+        then
+          score_ok = false
+        end
+      end
+      if score_ok then
+        for i = 2, #msg.scores do
+          if msg.scores[i - 1].points < msg.scores[i].points then
+            score_ok = false
+          end
+        end
+      end
+    end
+    if score_ok then
+      stats.score_payloads = stats.score_payloads + 1
+    else
+      c.errors = c.errors + 1
+      stats.errors = stats.errors + 1
+      log('client %d end missing or invalid scores/you', c.idx)
+    end
     if round_active then
       round_active = false
       rounds_ended = rounds_ended + 1
@@ -362,6 +397,7 @@ print(string.format('prompts          : %d', stats.prompts))
 print(string.format('clients w/prompt : %d/%d', with_prompts, stats.joined + stats.late_joined))
 print(string.format('solves           : %d', stats.solves))
 print(string.format('end messages     : %d', stats.ended))
+print(string.format('score payloads   : %d/%d', stats.score_payloads, stats.ended))
 print(string.format('errors           : %d', stats.errors))
 
 local failures = 0
@@ -369,6 +405,9 @@ if stats.joined < N then
   failures = failures + 1
 end
 if stats.errors > 0 then
+  failures = failures + 1
+end
+if stats.ended > 0 and stats.score_payloads < stats.ended then
   failures = failures + 1
 end
 if ROUNDS > 0 then
