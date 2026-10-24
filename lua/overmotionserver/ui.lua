@@ -29,10 +29,12 @@ function M.show()
   win = w
   vim.wo[win].cursorline = true
   vim.keymap.set('n', 'q', function()
+    require('overmotionserver.server').shutdown()
     if win and vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
-      win = nil
     end
+    win = nil
+    buf = nil
   end, { buffer = buf, nowait = true })
   vim.keymap.set('n', 's', function()
     if not buf or not vim.api.nvim_buf_is_valid(buf) then

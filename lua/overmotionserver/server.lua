@@ -454,4 +454,38 @@ function M.stop()
   end
 end
 
+function M.shutdown()
+  if not server then
+    return false
+  end
+
+  if timer then
+    timer:stop()
+    timer:close()
+    timer = nil
+  end
+  if ui_timer then
+    ui_timer:stop()
+    ui_timer:close()
+    ui_timer = nil
+  end
+  running = false
+  started_at = nil
+
+  for id, player in pairs(players) do
+    players[id] = nil
+    local handle = player.handle
+    if handle and not handle:is_closing() then
+      handle:read_stop()
+      handle:close()
+    end
+  end
+
+  server:close()
+  server = nil
+  log('stopped listening on ' .. current_host .. ':' .. current_port)
+  M.refresh()
+  return true
+end
+
 return M
